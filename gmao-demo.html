@@ -1,0 +1,263 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8">
+  <title>GMAO Mobilité SharePoint</title>
+  <style>
+    body { font-family: Arial; margin: 20px; }
+    .role-select { margin-bottom: 15px; }
+    .tab { display: inline-block; margin-right: 10px; cursor: pointer; padding: 6px 16px; border-radius: 6px; background: #e6e6e6; }
+    .tab.active { background: #0078d4; color: #fff; }
+    .section { margin-top: 20px; }
+    table { border-collapse: collapse; width: 100%; margin-top: 12px; }
+    th, td { border: 1px solid #ccc; padding: 6px; text-align: left; }
+    th { background: #f0f0f0; }
+    .btn { background: #0078d4; color: #fff; border: none; border-radius: 4px; padding: 5px 12px; cursor: pointer; }
+    .btn.delete { background: #e34c4c; }
+    .btn.edit { background: #ffc300; color: #222; }
+    .form-popup { background: #fff; padding: 18px; border: 1px solid #aaa; border-radius: 8px; width: 320px; position: fixed; top: 25%; left: 50%; transform: translate(-50%, -20%); z-index: 100; box-shadow: 0 6px 32px rgba(0,0,0,0.20);}
+    .form-popup label { display: block; margin-top: 7px;}
+    .form-popup input, .form-popup select { width: 95%; margin-top: 4px;}
+    .overlay { position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: #0007; z-index: 99;}
+  </style>
+</head>
+<body>
+
+  <h2>GMAO Mobilité (Démo SharePoint)</h2>
+  <div class="role-select">
+    <label for="role">Rôle&nbsp;:</label>
+    <select id="role" onchange="setRole(this.value)">
+      <option value="gestionnaire">Gestionnaire Matériel</option>
+      <option value="chef">Gestionnaire Personnel</option>
+      <option value="mecano">Mécanicien</option>
+      <option value="lecteur">Lecture seule</option>
+    </select>
+  </div>
+  <div>
+    <span class="tab active" onclick="showTab('vehicules')">Véhicules</span>
+    <span class="tab" onclick="showTab('engins')">Engins</span>
+    <span class="tab" onclick="showTab('outillages')">Outillages</span>
+    <span class="tab" onclick="showTab('taches')">Tâches de maintenance</span>
+  </div>
+
+  <div id="content"></div>
+
+  <div id="popup" style="display:none"></div>
+  <div id="overlay" style="display:none" class="overlay" onclick="closePopup()"></div>
+
+  <script>
+    // Données de démo
+    let vehicules = [
+      { id:1, marque:"Renault", modele:"Trafic", plaque:"ABC-123", dateCT:"2024-11-12", cycle:"12 mois" }
+    ];
+    let engins = [
+      { id:1, nom:"Mini-pelle Kubota", numero:"E001", dateCT:"2025-02-01", cycle:"24 mois"}
+    ];
+    let outillages = [
+      { id:1, nom:"Perceuse Bosch", numero:"O451", dateCT:"2025-04-01", cycle:"12 mois"}
+    ];
+    let taches = [
+      { id:1, titre:"Vidange Renault Trafic", equipement:"Renault Trafic", affecte:"mecano", echeance:"2024-07-01", statut:"A faire" }
+    ];
+    let currentTab = 'vehicules';
+    let currentRole = 'gestionnaire';
+
+    function setRole(role) {
+      currentRole = role;
+      render();
+    }
+
+    function showTab(tab) {
+      currentTab = tab;
+      document.querySelectorAll('.tab').forEach(t=>t.classList.remove('active'));
+      document.querySelectorAll('.tab')[['vehicules','engins','outillages','taches'].indexOf(tab)].classList.add('active');
+      render();
+    }
+
+    function render() {
+      let html = "";
+      // Affichage selon l'onglet
+      if (currentTab == 'vehicules') html += sectionEquipements(vehicules, "Véhicules", "vehicules");
+      if (currentTab == 'engins') html += sectionEquipements(engins, "Engins", "engins");
+      if (currentTab == 'outillages') html += sectionEquipements(outillages, "Outillages", "outillages");
+      if (currentTab == 'taches') html += sectionTaches();
+      document.getElementById('content').innerHTML = html;
+    }
+
+    function sectionEquipements(arr, label, type) {
+      let addBtn = (currentRole=="gestionnaire" || currentRole=="chef") ? `<button class="btn" onclick="openForm('${type}')">Ajouter</button>` : "";
+      let table = `<table><tr><th>Nom / Marque</th><th>Modèle / N°</th><th>Plaque</th><th>Date CT</th><th>Cycle</th>${(currentRole=="gestionnaire" || currentRole=="chef")?'<th>Actions</th>':''}</tr>`;
+      arr.forEach(e=>{
+        table += `<tr>
+          <td>${e.nom||e.marque}</td>
+          <td>${e.modele||e.numero||""}</td>
+          <td>${e.plaque||""}</td>
+          <td>${e.dateCT||""}</td>
+          <td>${e.cycle||""}</td>
+          ${(currentRole=="gestionnaire" || currentRole=="chef")?`<td>
+            <button class="btn edit" onclick="openForm('${type}', ${e.id})">✏️</button>
+            <button class="btn delete" onclick="deleteEquip('${type}', ${e.id})">🗑️</button>
+          </td>`:""}
+        </tr>`;
+      });
+      table += "</table>";
+      return `<div class="section"><h3>${label} ${addBtn}</h3>${table}</div>`;
+    }
+
+    function sectionTaches() {
+      let addBtn = (currentRole!="lecteur") ? `<button class="btn" onclick="openTacheForm()">Ajouter</button>` : "";
+      let table = `<table><tr><th>Titre</th><th>Équipement</th><th>Affecté à</th><th>Échéance</th><th>Statut</th>${currentRole!="lecteur"?'<th>Actions</th>':''}</tr>`;
+      taches.forEach(t=>{
+        if(currentRole=="mecano" && t.affecte!="mecano") return; // Filtre simple
+        table += `<tr>
+          <td>${t.titre}</td>
+          <td>${t.equipement}</td>
+          <td>${t.affecte}</td>
+          <td>${t.echeance}</td>
+          <td>${t.statut}</td>
+          ${currentRole!="lecteur"?`<td>
+            <button class="btn edit" onclick="openTacheForm(${t.id})">✏️</button>
+            <button class="btn delete" onclick="deleteTache(${t.id})">🗑️</button>
+          </td>`:""}
+        </tr>`;
+      });
+      table += "</table>";
+      return `<div class="section"><h3>Tâches de maintenance ${addBtn}</h3>${table}</div>`;
+    }
+
+    // Ajout / édition équipement
+    function openForm(type, id) {
+      let arr = (type=="vehicules"?vehicules:type=="engins"?engins:outillages);
+      let e = id ? arr.find(x=>x.id==id) : {};
+      let nom = e.nom||"", marque = e.marque||"", modele = e.modele||"", numero = e.numero||"", plaque = e.plaque||"", dateCT = e.dateCT||"", cycle = e.cycle||"";
+      let title = id ? "Modifier" : "Ajouter";
+      let form = `<div class="form-popup">
+        <h4>${title} ${type.slice(0,-1)}</h4>
+        ${type=="vehicules" ? `
+          <label>Marque<input id="fmarque" value="${marque}"></label>
+          <label>Modèle<input id="fmodele" value="${modele}"></label>
+          <label>Plaque<input id="fplaque" value="${plaque}"></label>
+        ` : `
+          <label>Nom<input id="fnom" value="${nom}"></label>
+          <label>Numéro<input id="fnumero" value="${numero}"></label>
+        `}
+        <label>Date Contrôle Technique<input id="fdateCT" type="date" value="${dateCT}"></label>
+        <label>Cycle (ex: 12 mois)<input id="fcycle" value="${cycle}"></label>
+        <div style="margin-top:10px; text-align:right;">
+          <button class="btn" onclick="saveForm('${type}', ${id||0})">Enregistrer</button>
+          <button class="btn" onclick="closePopup()">Annuler</button>
+        </div>
+      </div>`;
+      document.getElementById('popup').innerHTML = form;
+      document.getElementById('popup').style.display = "";
+      document.getElementById('overlay').style.display = "";
+    }
+
+    function saveForm(type, id) {
+      let arr = (type=="vehicules"?vehicules:type=="engins"?engins:outillages);
+      let obj = {};
+      if(type=="vehicules") {
+        obj = {
+          id: id || Math.max(0,...arr.map(x=>x.id))+1,
+          marque: document.getElementById('fmarque').value,
+          modele: document.getElementById('fmodele').value,
+          plaque: document.getElementById('fplaque').value,
+          dateCT: document.getElementById('fdateCT').value,
+          cycle: document.getElementById('fcycle').value
+        };
+      } else {
+        obj = {
+          id: id || Math.max(0,...arr.map(x=>x.id))+1,
+          nom: document.getElementById('fnom').value,
+          numero: document.getElementById('fnumero').value,
+          dateCT: document.getElementById('fdateCT').value,
+          cycle: document.getElementById('fcycle').value
+        };
+      }
+      if(id) { // edit
+        let idx = arr.findIndex(x=>x.id==id);
+        arr[idx]=obj;
+      } else arr.push(obj);
+      closePopup();
+      render();
+    }
+
+    function deleteEquip(type, id) {
+      let arr = (type=="vehicules"?vehicules:type=="engins"?engins:outillages);
+      if(confirm("Supprimer cet équipement ?")) {
+        let idx = arr.findIndex(x=>x.id==id);
+        arr.splice(idx,1);
+        render();
+      }
+    }
+
+    // Ajout / édition tâche
+    function openTacheForm(id) {
+      let t = id ? taches.find(x=>x.id==id) : {};
+      let titre = t?.titre||"", equipement = t?.equipement||"", affecte = t?.affecte||"mecano", echeance = t?.echeance||"", statut = t?.statut||"A faire";
+      // Liste équipements
+      let eqs = [...vehicules.map(v=>v.marque+" "+v.modele), ...engins.map(e=>e.nom), ...outillages.map(o=>o.nom)];
+      let form = `<div class="form-popup">
+        <h4>${id?'Modifier':'Ajouter'} Tâche</h4>
+        <label>Titre<input id="ttitre" value="${titre}"></label>
+        <label>Équipement<select id="tequipement">${eqs.map(eq=>`<option${eq==equipement?' selected':''}>${eq}</option>`)}</select></label>
+        <label>Affecté à
+          <select id="taffecte">
+            <option${affecte=="mecano"?' selected':''}>mecano</option>
+            <option${affecte=="gestionnaire"?' selected':''}>gestionnaire</option>
+            <option${affecte=="chef"?' selected':''}>chef</option>
+          </select>
+        </label>
+        <label>Échéance<input id="techeance" type="date" value="${echeance}"></label>
+        <label>Statut
+          <select id="tstatut">
+            <option${statut=="A faire"?' selected':''}>A faire</option>
+            <option${statut=="En cours"?' selected':''}>En cours</option>
+            <option${statut=="Terminé"?' selected':''}>Terminé</option>
+          </select>
+        </label>
+        <div style="margin-top:10px; text-align:right;">
+          <button class="btn" onclick="saveTache(${id||0})">Enregistrer</button>
+          <button class="btn" onclick="closePopup()">Annuler</button>
+        </div>
+      </div>`;
+      document.getElementById('popup').innerHTML = form;
+      document.getElementById('popup').style.display = "";
+      document.getElementById('overlay').style.display = "";
+    }
+
+    function saveTache(id) {
+      let obj = {
+        id: id || Math.max(0,...taches.map(x=>x.id))+1,
+        titre: document.getElementById('ttitre').value,
+        equipement: document.getElementById('tequipement').value,
+        affecte: document.getElementById('taffecte').value,
+        echeance: document.getElementById('techeance').value,
+        statut: document.getElementById('tstatut').value
+      };
+      if(id) {
+        let idx = taches.findIndex(x=>x.id==id);
+        taches[idx]=obj;
+      } else taches.push(obj);
+      closePopup();
+      render();
+    }
+
+    function deleteTache(id) {
+      if(confirm("Supprimer cette tâche ?")) {
+        let idx = taches.findIndex(x=>x.id==id);
+        taches.splice(idx,1);
+        render();
+      }
+    }
+
+    function closePopup() {
+      document.getElementById('popup').style.display = "none";
+      document.getElementById('overlay').style.display = "none";
+    }
+
+    // Init
+    render();
+  </script>
+</body>
+</html>
